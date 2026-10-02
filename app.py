@@ -3548,7 +3548,6 @@ canvas {
 </div>
 
 
-
 <!-- ========================================================
      NEXUS DEPOSIT MODAL
      ======================================================== -->
@@ -3621,11 +3620,11 @@ canvas {
 
 </div>
 
-<!-- JavaScript Validation -->
+<!-- JavaScript Logic for Deposit, Balance Update, & Dashboard Redirect -->
 <script>
 const MIN_DEPOSIT = 200;
 
-// Validates live as the user types or changes the value
+// Live validation as the user types
 function validateAmountInput() {
     const amountInput = document.getElementById("mpesaAmount");
     const statusDiv = document.getElementById("mpesaStatus");
@@ -3636,21 +3635,26 @@ function validateAmountInput() {
     if (amount < MIN_DEPOSIT || isNaN(amount)) {
         statusDiv.style.color = "red";
         statusDiv.innerText = `The minimum amount is ${MIN_DEPOSIT}.`;
-        payBtn.disabled = true; // Optionally disable the button
+        payBtn.disabled = true;
         payBtn.style.opacity = "0.6";
     } else {
-        statusDiv.innerText = ""; // Clear warning when valid
+        statusDiv.innerText = "";
         payBtn.disabled = false;
         payBtn.style.opacity = "1";
     }
 }
 
-function requestNexusDeposit() {
+// Trigger M-Pesa deposit request
+async function requestNexusDeposit() {
     const amountInput = document.getElementById("mpesaAmount");
+    const phoneInput = document.getElementById("mpesaPhone");
     const statusDiv = document.getElementById("mpesaStatus");
-    const amount = parseFloat(amountInput.value);
+    const payBtn = document.getElementById("mpesaPayBtn");
 
-    // Final safety check on click
+    const amount = parseFloat(amountInput.value);
+    const phone = phoneInput.value.trim();
+
+    // Validation checks
     if (isNaN(amount) || amount < MIN_DEPOSIT) {
         statusDiv.style.color = "red";
         statusDiv.innerText = `The minimum amount is ${MIN_DEPOSIT}.`;
@@ -3658,11 +3662,99 @@ function requestNexusDeposit() {
         return;
     }
 
-    // Clear error and proceed with the payment request
-    statusDiv.innerText = "";
+    if (!phone || phone.length < 10) {
+        statusDiv.style.color = "red";
+        statusDiv.innerText = "Please enter a valid M-Pesa phone number.";
+        phoneInput.focus();
+        return;
+    }
+
+    // Show loading state
+    payBtn.disabled = true;
+    payBtn.innerText = "Processing...";
+    statusDiv.style.color = "orange";
+    statusDiv.innerText = "STK push sent to your phone. Enter PIN to complete...";
+
+    try {
+        // --- SIMULATED BACKEND API CALL ---
+        // Replace this block with your actual fetch() request to your backend STK push endpoint
+        const paymentSuccessful = await simulateMpesaStkPush(phone, amount);
+
+        if (paymentSuccessful) {
+            statusDiv.style.color = "green";
+            statusDiv.innerText = "Payment successful! Updating balance...";
+
+            // 1. Update Customer Balance
+            updateCustomerBalance(amount);
+
+            // 2. Short delay before closing modal and returning to dashboard
+            setTimeout(() => {
+                closeMpesaModal();
+                returnToDashboard();
+            }, 1500);
+
+        } else {
+            throw new Error("Payment failed or was cancelled.");
+        }
+
+    } catch (error) {
+        statusDiv.style.color = "red";
+        statusDiv.innerText = error.message || "Something went wrong. Try again.";
+        payBtn.disabled = false;
+        payBtn.innerText = "PAY";
+    }
+}
+
+// Function to update the balance shown in the UI/session
+function updateCustomerBalance(addedAmount) {
+    // Assuming you store balance in an element like <span id="userBalance">0</span>
+    const balanceElements = document.querySelectorAll(".user-balance"); 
     
-    // TODO: Add your existing payment trigger code here
-    console.log("Processing deposit of KES", amount);
+    // Get current balance, default to 0 if not found
+    let currentBalance = parseFloat(localStorage.getItem("nexus_balance")) || 0;
+    currentBalance += addedAmount;
+
+    // Save updated balance to localStorage (or your state management)
+    localStorage.setItem("nexus_balance", currentBalance);
+
+    // Update all balance display elements on the screen
+    balanceElements.forEach(el => {
+        el.innerText = currentBalance.toLocaleString();
+    });
+}
+
+// Function to close the modal
+function closeMpesaModal() {
+    const modal = document.getElementById("mpesaModal");
+    if (modal) modal.style.display = "none";
+    
+    // Reset button state
+    const payBtn = document.getElementById("mpesaPayBtn");
+    payBtn.disabled = false;
+    payBtn.innerText = "PAY";
+    document.getElementById("mpesaStatus").innerText = "";
+}
+
+// Function to switch view back to the dashboard
+function returnToDashboard() {
+    // Hide game views or modal screens, and show the dashboard container
+    const dashboard = document.getElementById("dashboardView");
+    const gameView = document.getElementById("gameView"); // if applicable
+
+    if (dashboard) dashboard.style.display = "block";
+    if (gameView) gameView.style.display = "none";
+    
+    // Alternatively, if you use single-page routing or window location:
+    // window.location.href = "dashboard.html";
+}
+
+// Simulation helper (Replace this with your real backend integration)
+function simulateMpesaStkPush(phone, amount) {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            resolve(true); // Returns true for successful transaction simulation
+        }, 3000);
+    });
 }
 </script>
 
