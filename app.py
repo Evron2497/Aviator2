@@ -2207,9 +2207,9 @@ def admin_confirm_nexus():
         }), 500
 
 
-<!-- ========================================================
-     NEXUS WITHDRAWAL MODAL
-     ======================================================== -->
+
+     # NEXUS WITHDRAWAL MODAL
+
 <div class="mpesa-modal" id="withdrawModal" style="display: none;">
     <div class="mpesa-card">
         <h3>
@@ -2225,7 +2225,7 @@ def admin_confirm_nexus():
         <input
             id="withdrawAmount"
             type="number"
-            min="50"
+            min="1000"
             step="10"
             placeholder="Enter amount"
         >
