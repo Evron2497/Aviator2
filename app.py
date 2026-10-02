@@ -2207,124 +2207,163 @@ def admin_confirm_nexus():
         }), 500
 
 
+# ============================================================
+# WITHDRAWALS
+# ============================================================
 
-     # NEXUS WITHDRAWAL MODAL
+@app.route(
+    "/api/withdraw",
+    methods=["POST"]
+)
+def api_withdraw():
 
-<div class="mpesa-modal" id="withdrawModal" style="display: none;">
-    <div class="mpesa-card">
-        <h3>
-            Withdraw Funds
-        </h3>
-        <p>
-            Enter the amount you wish to withdraw to your registered M-Pesa phone number.
-        </p>
+    if "username" not in session:
+        return jsonify({
+            "success": False,
+            "message": "Unauthorized"
+        }), 401
 
-        <label for="withdrawAmount">
-            Amount (KES)
-        </label>
-        <input
-            id="withdrawAmount"
-            type="number"
-            min="1000"
-            step="10"
-            placeholder="Enter amount"
-        >
+    data = request.get_json(
+        silent=True
+    ) or {}
 
-        <div class="mpesa-status" id="withdrawStatus"></div>
+    amount = safe_float(
+        data.get("amount")
+    )
 
-        <div class="mpesa-actions">
-            <button
-                class="mpesa-cancel"
-                onclick="closeWithdrawModal()"
-            >
-                CANCEL
-            </button>
-            <button
-                class="mpesa-pay"
-                id="withdrawSubmitBtn"
-                onclick="submitNexusWithdrawal()"
-            >
-                WITHDRAW
-            </button>
-        </div>
-    </div>
-</div>
+    if amount is None:
+        return jsonify({
+            "success": False,
+            "message": "Invalid amount."
+        })
 
+    if amount <= 0:
+        return jsonify({
+            "success": False,
+            "message": (
+                "Withdrawal amount "
+                "must be greater than zero."
+            )
+        })
 
-// Open withdrawal modal
-function openWithdrawModal() {
-    const modal = document.getElementById("withdrawModal");
-    if (modal) modal.style.display = "flex";
-    document.getElementById("withdrawStatus").innerText = "";
-    document.getElementById("withdrawAmount").value = "";
-}
+    # Minimum withdrawal check
+    MIN_WITHDRAWAL = 1000
+    if amount < MIN_WITHDRAWAL:
+        return jsonify({
+            "success": False,
+            "message": (
+                f"Minimum withdrawal is "
+                f"KES {MIN_WITHDRAWAL:,.2f}."
+            )
+        })
 
-// Close withdrawal modal
-function closeWithdrawModal() {
-    const modal = document.getElementById("withdrawModal");
-    if (modal) modal.style.display = "none";
-    
-    const submitBtn = document.getElementById("withdrawSubmitBtn");
-    submitBtn.disabled = false;
-    submitBtn.innerText = "WITHDRAW";
-}
+    if amount > MAX_WITHDRAWAL:
+        return jsonify({
+            "success": False,
+            "message": (
+                f"Maximum withdrawal is "
+                f"KES {MAX_WITHDRAWAL:,.2f}."
+            )
+        })
 
-// Submit withdrawal to your Flask backend route (/api/withdraw)
-async function submitNexusWithdrawal() {
-    const amountInput = document.getElementById("withdrawAmount");
-    const statusDiv = document.getElementById("withdrawStatus");
-    const submitBtn = document.getElementById("withdrawSubmitBtn");
+    username = session["username"]
 
-    const amount = parseFloat(amountInput.value);
+    user = get_user(username)
 
-    if (isNaN(amount) || amount <= 0) {
-        statusDiv.style.color = "red";
-        statusDiv.innerText = "Please enter a valid withdrawal amount.";
-        amountInput.focus();
-        return;
-    }
+    if not user:
+        return jsonify({
+            "success": False,
+            "message": "User not found."
+        }), 404
 
-    // Disable button & show loading status inside the modal template
-    submitBtn.disabled = true;
-    submitBtn.innerText = "Processing...";
-    statusDiv.style.color = "orange";
-    statusDiv.innerText = "Submitting withdrawal request...";
+    # Reserve the balance atomically.
+    conn = get_db()
 
-    try {
-        const response = await fetch("/api/withdraw", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ amount: amount })
-        });
+    try:
+        conn.execute("BEGIN IMMEDIATE")
 
-        const result = await response.json();
+        cursor = conn.execute(
+            """
+            UPDATE users
 
-        if (result.success) {
-            statusDiv.style.color = "green";
-            statusDiv.innerText = result.message;
+            SET balance=balance-?
 
-            // Optionally refresh user balance if returned or update UI
-            setTimeout(() => {
-                closeWithdrawModal();
-                // window.location.reload(); // Optional: reload page to update balance
-            }, 2000);
-        } else {
-            statusDiv.style.color = "red";
-            statusDiv.innerText = result.message || "Withdrawal failed.";
-            submitBtn.disabled = false;
-            submitBtn.innerText = "WITHDRAW";
-        }
+            WHERE username=?
+              AND balance>=?
+            """,
+            (
+                amount,
+                username,
+                amount
+            )
+        )
 
-    } catch (error) {
-        statusDiv.style.color = "red";
-        statusDiv.innerText = "Network error. Please try again.";
-        submitBtn.disabled = false;
-        submitBtn.innerText = "WITHDRAW";
-    }
-}
+        if cursor.rowcount != 1:
+            conn.rollback()
 
+            return jsonify({
+                "success": False,
+                "message": "Insufficient balance."
+            })
+
+        now = datetime.now().isoformat()
+
+        cursor = conn.execute(
+            """
+            INSERT INTO withdrawals
+            (
+                username,
+                phone_number,
+                amount,
+                status,
+                provider_message,
+                created_at,
+                updated_at
+            )
+
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username,
+                user["phone_number"],
+                amount,
+                "PENDING",
+                "Withdrawal awaiting processing.",
+                now,
+                now
+            )
+        )
+
+        withdrawal_id = cursor.lastrowid
+
+        conn.commit()
+
+    except Exception as exc:
+
+        conn.rollback()
+
+        print(
+            "Withdrawal error:",
+            repr(exc)
+        )
+
+        return jsonify({
+            "success": False,
+            "message": "Withdrawal request failed."
+        }), 500
+
+    finally:
+        conn.close()
+
+    return jsonify({
+        "success": True,
+        "message": (
+            f"Withdrawal of KES "
+            f"{amount:,.2f} has been submitted "
+            f"for processing."
+        ),
+        "withdrawal_id": withdrawal_id
+    })
 
 
 # ============================================================
