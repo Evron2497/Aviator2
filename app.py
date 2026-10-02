@@ -262,11 +262,13 @@ def generate_crash_point():
 
 
 def calculate_multiplier(elapsed):
-    multiplier = 1.0 + (elapsed * 0.22)
+    # Increased base speed multiplier growth rate (changed from 0.22 to 0.85)
+    multiplier = 1.0 + (elapsed * 0.85)
 
-    if multiplier > 2.5:
+    # Accelerated curve kicks in much faster and steeper
+    if multiplier > 2.0:
         multiplier += (
-            ((elapsed - 6.0) ** 1.25) * 0.05
+            ((elapsed - 2.0) ** 1.35) * 0.35
         )
 
     return round(
@@ -293,7 +295,6 @@ GAME = {
 
     "bot_bets": []
 }
-
 
 FAKE_USERS = [
     "***1",
