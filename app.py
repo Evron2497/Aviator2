@@ -2782,82 +2782,37 @@ body {
 
     user-select: none;
 }
+<!-- ========================================================
+     HEADER
+     ======================================================== -->
+<header class="header">
+    <div class="brand">NEXUS</div>
 
-/* ==========================================================
-   HEADER
-   ========================================================== */
+    <!-- Desktop Wallet / Actions (hidden on small screens) -->
+    <div class="wallet desktop-wallet">
+        <span class="balance">KES <span class="user-balance">200</span></span>
+        <button class="deposit-btn" onclick="openMpesaModal()">Deposit</button>
+        <button class="withdraw-btn" onclick="openWithdrawModal()">Withdraw</button>
+        <button class="logout-btn" onclick="logoutUser()">Logout</button>
+    </div>
 
-.header {
-    display: flex;
+    <!-- Mobile Menu Toggle Button (Two Lines / Hamburger) -->
+    <button class="mobile-menu-toggle" id="menuToggleBtn" onclick="toggleMobileMenu()" aria-label="Toggle Menu">
+        <span></span>
+        <span></span>
+    </button>
 
-    justify-content: space-between;
-
-    align-items: center;
-
-    background: #1b1c20;
-
-    padding: 10px 16px;
-
-    border-bottom: 1px solid #2a2b30;
-
-    gap: 12px;
-}
-
-.brand {
-    font-size: 20px;
-
-    font-weight: 900;
-
-    color: #28a745;
-
-    letter-spacing: 1px;
-}
-
-.wallet {
-    display: flex;
-
-    align-items: center;
-
-    gap: 10px;
-
-    flex-wrap: wrap;
-
-    justify-content: flex-end;
-}
-
-.balance {
-    color: #28a745;
-
-    font-weight: bold;
-
-    font-size: 16px;
-}
-
-.deposit-btn,
-.withdraw-btn {
-    color: #fff;
-
-    font-weight: bold;
-
-    border: none;
-
-    padding: 8px 16px;
-
-    border-radius: 20px;
-
-    cursor: pointer;
-
-    font-size: 13px;
-}
-
-.deposit-btn {
-    background: #28a745;
-}
-
-.withdraw-btn {
-    background: #007bff;
-}
-
+    <!-- Mobile Dropdown Menu -->
+    <div class="mobile-dropdown" id="mobileDropdown">
+        <div class="mobile-balance-row">
+            <span>Balance:</span>
+            <span class="balance">KES <span class="user-balance">200</span></span>
+        </div>
+        <button class="deposit-btn" onclick="openMpesaModal(); toggleMobileMenu();">Deposit</button>
+        <button class="withdraw-btn" onclick="openWithdrawModal(); toggleMobileMenu();">Withdraw</button>
+        <button class="logout-btn" onclick="logoutUser();">Logout</button>
+    </div>
+</header>
 /* ==========================================================
    ADMIN
    ========================================================== */
@@ -3859,8 +3814,8 @@ function simulateMpesaStkPush(phone, amount) {
                             id="amount1"
                             class="amount-input"
                             value="20.00"
-                            min="1"
-                            step="1"
+                            min="20"
+                            step="2"
                         >
 
                         <button
