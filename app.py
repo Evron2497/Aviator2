@@ -3580,6 +3580,7 @@ canvas {
             min="200"
             step="10"
             value="200"
+            oninput="validateAmountInput()"
         >
 
         <label for="mpesaPhone">
@@ -3620,32 +3621,50 @@ canvas {
 
 </div>
 
-<!-- JavaScript Validation Example -->
+<!-- JavaScript Validation -->
 <script>
+const MIN_DEPOSIT = 200;
+
+// Validates live as the user types or changes the value
+function validateAmountInput() {
+    const amountInput = document.getElementById("mpesaAmount");
+    const statusDiv = document.getElementById("mpesaStatus");
+    const payBtn = document.getElementById("mpesaPayBtn");
+    
+    const amount = parseFloat(amountInput.value);
+
+    if (amount < MIN_DEPOSIT || isNaN(amount)) {
+        statusDiv.style.color = "red";
+        statusDiv.innerText = `The minimum amount is ${MIN_DEPOSIT}.`;
+        payBtn.disabled = true; // Optionally disable the button
+        payBtn.style.opacity = "0.6";
+    } else {
+        statusDiv.innerText = ""; // Clear warning when valid
+        payBtn.disabled = false;
+        payBtn.style.opacity = "1";
+    }
+}
+
 function requestNexusDeposit() {
     const amountInput = document.getElementById("mpesaAmount");
     const statusDiv = document.getElementById("mpesaStatus");
-    const minAmount = 200;
-
     const amount = parseFloat(amountInput.value);
 
-    // Check if the amount is less than the minimum allowed
-    if (isNaN(amount) || amount < minAmount) {
+    // Final safety check on click
+    if (isNaN(amount) || amount < MIN_DEPOSIT) {
         statusDiv.style.color = "red";
-        statusDiv.innerText = `Minimum deposit amount is KES ${minAmount}.`;
+        statusDiv.innerText = `The minimum amount is ${MIN_DEPOSIT}.`;
         amountInput.focus();
-        return; // Stop execution
+        return;
     }
 
     // Clear error and proceed with the payment request
-    statusDiv.style.color = "";
     statusDiv.innerText = "";
     
     // TODO: Add your existing payment trigger code here
     console.log("Processing deposit of KES", amount);
 }
 </script>
-# 
 
 <div class="main-layout">
 
