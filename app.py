@@ -3548,6 +3548,77 @@ canvas {
 </div>
 
 
+# <!-- ========================================================
+#      NEXUS DEPOSIT MODAL
+#      ======================================================== -->
+
+# <div
+#     class="mpesa-modal"
+#     id="mpesaModal"
+# >
+
+#     <div class="mpesa-card">
+
+#         <h3>
+#             Deposit with M-Pesa
+#         </h3>
+
+#         <p>
+#             Enter your amount and M-Pesa number.
+#             Nexus Pay will send an M-Pesa payment
+#             prompt to your phone.
+#         </p>
+
+#         <label for="mpesaAmount">
+#             Amount (KES)
+#         </label>
+
+#         <input
+#             id="mpesaAmount"
+#             type="number"
+#             min="200"
+#             step="10"
+#             value="200"
+#         >
+
+#         <label for="mpesaPhone">
+#             M-Pesa phone number
+#         </label>
+
+#         <input
+#             id="mpesaPhone"
+#             type="tel"
+#             placeholder="0712345678"
+#         >
+
+#         <div
+#             class="mpesa-status"
+#             id="mpesaStatus"
+#         ></div>
+
+#         <div class="mpesa-actions">
+
+#             <button
+#                 class="mpesa-cancel"
+#                 onclick="closeMpesaModal()"
+#             >
+#                 CANCEL
+#             </button>
+
+#             <button
+#                 class="mpesa-pay"
+#                 id="mpesaPayBtn"
+#                 onclick="requestNexusDeposit()"
+#             >
+#                 PAY
+#             </button>
+
+#         </div>
+
+#     </div>
+
+# </div>
+# 
 <!-- ========================================================
      NEXUS DEPOSIT MODAL
      ======================================================== -->
@@ -3619,6 +3690,32 @@ canvas {
 
 </div>
 
+<!-- JavaScript Validation Example -->
+<script>
+function requestNexusDeposit() {
+    const amountInput = document.getElementById("mpesaAmount");
+    const statusDiv = document.getElementById("mpesaStatus");
+    const minAmount = 200;
+
+    const amount = parseFloat(amountInput.value);
+
+    // Check if the amount is less than the minimum allowed
+    if (isNaN(amount) || amount < minAmount) {
+        statusDiv.style.color = "red";
+        statusDiv.innerText = `Minimum deposit amount is KES ${minAmount}.`;
+        amountInput.focus();
+        return; // Stop execution
+    }
+
+    // Clear error and proceed with the payment request
+    statusDiv.style.color = "";
+    statusDiv.innerText = "";
+    
+    // TODO: Add your existing payment trigger code here
+    console.log("Processing deposit of KES", amount);
+}
+</script>
+# 
 
 <div class="main-layout">
 
