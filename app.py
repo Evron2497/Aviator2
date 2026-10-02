@@ -2788,65 +2788,45 @@ body {
 
 .header {
     display: flex;
-
     justify-content: space-between;
-
     align-items: center;
-
     background: #1b1c20;
-
     padding: 10px 16px;
-
     border-bottom: 1px solid #2a2b30;
-
     gap: 12px;
 }
 
 .brand {
     font-size: 20px;
-
     font-weight: 900;
-
     color: #28a745;
-
     letter-spacing: 1px;
 }
 
 .wallet {
     display: flex;
-
     align-items: center;
-
     gap: 10px;
-
-    flex-wrap: wrap;
-
+    flex-wrap: nowrap; /* Prevents items from dropping to a new line */
     justify-content: flex-end;
 }
 
 .balance {
     color: #28a745;
-
     font-weight: bold;
-
     font-size: 16px;
 }
 
 .deposit-btn,
 .withdraw-btn {
     color: #fff;
-
     font-weight: bold;
-
     border: none;
-
     padding: 8px 16px;
-
     border-radius: 20px;
-
     cursor: pointer;
-
     font-size: 13px;
+    white-space: nowrap; /* Keeps button text on a single line */
 }
 
 .deposit-btn {
@@ -2855,6 +2835,37 @@ body {
 
 .withdraw-btn {
     background: #007bff;
+}
+
+/* ==========================================================
+   RESPONSIVE STYLES FOR SMALL PHONES (Android / iOS)
+   ========================================================== */
+
+@media screen and (max-width: 480px) {
+    .header {
+        padding: 8px 10px; /* Slimmer padding for small screens */
+        gap: 6px;
+    }
+
+    .brand {
+        font-size: 16px; /* Reduced brand text size */
+        letter-spacing: 0.5px;
+    }
+
+    .wallet {
+        gap: 6px; /* Tighter spacing between balance and buttons */
+    }
+
+    .balance {
+        font-size: 13px; /* Smaller balance text */
+    }
+
+    .deposit-btn,
+    .withdraw-btn {
+        padding: 6px 10px; /* Smaller button padding */
+        font-size: 11px;    /* Smaller text inside buttons */
+        border-radius: 15px;
+    }
 }
 /* ==========================================================
    ADMIN
