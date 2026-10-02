@@ -3548,77 +3548,7 @@ canvas {
 </div>
 
 
-# <!-- ========================================================
-#      NEXUS DEPOSIT MODAL
-#      ======================================================== -->
 
-# <div
-#     class="mpesa-modal"
-#     id="mpesaModal"
-# >
-
-#     <div class="mpesa-card">
-
-#         <h3>
-#             Deposit with M-Pesa
-#         </h3>
-
-#         <p>
-#             Enter your amount and M-Pesa number.
-#             Nexus Pay will send an M-Pesa payment
-#             prompt to your phone.
-#         </p>
-
-#         <label for="mpesaAmount">
-#             Amount (KES)
-#         </label>
-
-#         <input
-#             id="mpesaAmount"
-#             type="number"
-#             min="200"
-#             step="10"
-#             value="200"
-#         >
-
-#         <label for="mpesaPhone">
-#             M-Pesa phone number
-#         </label>
-
-#         <input
-#             id="mpesaPhone"
-#             type="tel"
-#             placeholder="0712345678"
-#         >
-
-#         <div
-#             class="mpesa-status"
-#             id="mpesaStatus"
-#         ></div>
-
-#         <div class="mpesa-actions">
-
-#             <button
-#                 class="mpesa-cancel"
-#                 onclick="closeMpesaModal()"
-#             >
-#                 CANCEL
-#             </button>
-
-#             <button
-#                 class="mpesa-pay"
-#                 id="mpesaPayBtn"
-#                 onclick="requestNexusDeposit()"
-#             >
-#                 PAY
-#             </button>
-
-#         </div>
-
-#     </div>
-
-# </div>
-# 
 <!-- ========================================================
      NEXUS DEPOSIT MODAL
      ======================================================== -->
