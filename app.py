@@ -2785,6 +2785,68 @@ body {
 <!-- ========================================================
      HEADER
      ======================================================== -->
+
+     /* ==========================================================
+   HEADER
+   ========================================================== */
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1b1c20;
+    padding: 8px 12px; /* Minimized padding for small devices */
+    border-bottom: 2px solid #28a745; /* Green accent border */
+    gap: 8px; /* Tighter gap for responsiveness */
+    flex-wrap: nowrap; /* Forces elements to stay on one row if possible */
+    overflow-x: auto; /* Prevents overflow clipping on extremely tiny screens */
+}
+
+.brand {
+    font-size: 18px; /* Slightly scaled down for mobile fit */
+    font-weight: 900;
+    color: #28a745; /* M-Pesa Green */
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.wallet {
+    display: flex;
+    align-items: center;
+    gap: 6px; /* Tighter spacing for small screens */
+    flex-wrap: nowrap; /* Keeps items aligned on one line */
+    justify-content: flex-end;
+}
+
+.balance {
+    color: #ffc107; /* Bright Yellow highlight for the balance */
+    font-weight: bold;
+    font-size: 14px; /* Scaled for compact mobile screens */
+    white-space: nowrap;
+}
+
+.deposit-btn,
+.withdraw-btn {
+    color: #1b1c20; /* Dark text for contrast against bright yellow */
+    font-weight: 800;
+    border: none;
+    padding: 6px 12px; /* Minimized padding to fit small phones */
+    border-radius: 16px;
+    cursor: pointer;
+    font-size: 12px; /* Compact font size */
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.deposit-btn {
+    background: #28a745; /* M-Pesa Green */
+    color: #ffffff;
+}
+
+.withdraw-btn {
+    background: #ffc107; /* Vibrant Yellow */
+    color: #1b1c20;
+}
 <header class="header">
     <div class="brand">NEXUS</div>
 
