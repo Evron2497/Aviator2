@@ -3597,9 +3597,9 @@ canvas {
         <input
             id="mpesaAmount"
             type="number"
-            min="200"
+            min="100"
             step="10"
-            value="200"
+            value="100"
             oninput="validateAmountInput()"
         >
 
@@ -3643,7 +3643,7 @@ canvas {
 
 <!-- JavaScript Logic for Deposit, Balance Update, & Dashboard Redirect -->
 <script>
-const MIN_DEPOSIT = 200;
+const MIN_DEPOSIT = 100;
 
 // Live validation as the user types
 function validateAmountInput() {
