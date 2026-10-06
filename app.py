@@ -5786,11 +5786,18 @@ if NEXUS_PAY_TIMEOUT < 5:
 
 # Optional callback secret. Leave blank until Nexus provides a webhook
 # signing/verification secret and its exact callback specification.
+# NEXUS_CALLBACK_SECRET = os.getenv("NEXUS_CALLBACK_SECRET", "").strip()
+# NEXUS_WEBHOOK_SECRET = os.getenv("NEXUS_WEBHOOK_SECRET", "").strip()
+# NEXUS_WEBHOOK_PATH = os.getenv("NEXUS_WEBHOOK_PATH", "/api/nexus/webhook").strip() or "/api/nexus/webhook"
+# NEXUS_WEBHOOK_URL = os.getenv("NEXUS_WEBHOOK_URL", "").strip()
 NEXUS_CALLBACK_SECRET = os.getenv("NEXUS_CALLBACK_SECRET", "").strip()
 NEXUS_WEBHOOK_SECRET = os.getenv("NEXUS_WEBHOOK_SECRET", "").strip()
-NEXUS_WEBHOOK_PATH = os.getenv("NEXUS_WEBHOOK_PATH", "/api/nexus/webhook").strip() or "/api/nexus/webhook"
-NEXUS_WEBHOOK_URL = os.getenv("NEXUS_WEBHOOK_URL", "").strip()
+NEXUS_WEBHOOK_PATH = os.getenv(
+    "NEXUS_WEBHOOK_PATH",
+    "/api/nexus/webhook"
+).strip() or "/api/nexus/webhook"
 
+NEXUS_WEBHOOK_URL = os.getenv("NEXUS_WEBHOOK_URL", "").strip()
 # ============================================================
 
 
