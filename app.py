@@ -9716,6 +9716,22 @@ body {
     color: #bbb;
 }
 
+.mpesa-amount-warning {
+    display: none;
+    margin-top: 8px;
+    padding: 9px 11px;
+    border: 1px solid #dc2626;
+    border-radius: 6px;
+    background: rgba(220, 38, 38, 0.12);
+    color: #ff4d4f;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.mpesa-amount-warning.visible {
+    display: block;
+}
+
 /* ==========================================================
    MAIN
    ========================================================== */
@@ -10361,7 +10377,12 @@ canvas {
             step="1"
             value="200"
             required
+            oninput="validateDepositAmount()"
         >
+
+        <div id="mpesaAmountWarning" class="mpesa-amount-warning" role="alert" aria-live="polite">
+            ⚠ Minimum deposit is KES 200. Please enter KES 200 or more.
+        </div>
 
         <label for="mpesaPhone">
             M-Pesa phone number
@@ -11924,7 +11945,34 @@ function closeMpesaModal() {
 }
 
 
+function validateDepositAmount() {
+    const amountInput = document.getElementById("mpesaAmount");
+    const warning = document.getElementById("mpesaAmountWarning");
+    const payButton = document.getElementById("mpesaPayBtn");
+    const rawValue = amountInput.value.trim();
+    const amount = Number(rawValue);
+    const isBelowMinimum = rawValue !== "" && (!Number.isFinite(amount) || amount < 200);
+
+    warning.classList.toggle("visible", isBelowMinimum);
+    amountInput.setCustomValidity(
+        isBelowMinimum ? "Minimum deposit is KES 200." : ""
+    );
+
+    if (payButton) {
+        payButton.disabled = isBelowMinimum;
+        payButton.style.opacity = isBelowMinimum ? "0.6" : "1";
+        payButton.style.cursor = isBelowMinimum ? "not-allowed" : "pointer";
+    }
+
+    return !isBelowMinimum;
+}
+
+
 async function requestNexusDeposit() {
+
+    if (!validateDepositAmount()) {
+        return;
+    }
 
     const amount =
         parseFloat(
