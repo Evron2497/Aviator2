@@ -6168,11 +6168,10 @@
 #         use_reloader=False
 #     )
 
-
-
 import os
 import time
 import random
+import math
 import sqlite3
 import hashlib
 import secrets
@@ -6210,6 +6209,7 @@ DB_NAME = (
 )
 
 BETTING_WINDOW = 7.0
+MIN_WITHDRAWAL = 1000.0
 MAX_WITHDRAWAL = 250000.0
 CRASH_DISPLAY_TIME = 2.5
 STARTING_BALANCE = 0.0
@@ -6488,17 +6488,15 @@ def generate_crash_point():
 
 
 def calculate_multiplier(elapsed):
-    multiplier = 1.0 + (elapsed * 0.22)
+    """Calculate an accelerating crash-game multiplier.
 
-    if multiplier > 2.5:
-        multiplier += (
-            ((elapsed - 6.0) ** 1.25) * 0.05
-        )
-
-    return round(
-        max(multiplier, 1.0),
-        2
-    )
+    The multiplier grows smoothly and progressively faster as the round
+    continues. Keep this deterministic for a given elapsed time so server
+    state, bets, and cash-outs all use the same value.
+    """
+    elapsed = max(0.0, float(elapsed))
+    multiplier = math.exp(0.115 * elapsed)
+    return round(max(multiplier, 1.0), 2)
 
 
 GAME = {
@@ -8807,7 +8805,12 @@ def nexus_b2c_disbursement(phone_number, amount, username, withdrawal_id=None, r
     amount = safe_float(amount)
 
     if amount is None or amount <= 0:
-        raise ValueError("Withdrawal amount must be greater than zero.")
+        raise ValueError("Invalid withdrawal amount.")
+
+    if amount < MIN_WITHDRAWAL:
+        raise ValueError(
+            f"Minimum withdrawal is KES {MIN_WITHDRAWAL:,.0f}."
+        )
 
     if amount > MAX_WITHDRAWAL:
         raise ValueError(
@@ -8921,6 +8924,12 @@ def api_withdraw():
 
     if amount is None or amount <= 0:
         return jsonify({"success": False, "error": "Invalid withdrawal amount."}), 400
+
+    if amount < MIN_WITHDRAWAL:
+        return jsonify({
+            "success": False,
+            "error": f"Minimum withdrawal is KES {MIN_WITHDRAWAL:,.0f}."
+        }), 400
 
     if amount > MAX_WITHDRAWAL:
         return jsonify({
@@ -10884,11 +10893,13 @@ function drawScene() {
         currentStatus === "CRASHED"
     ) {
 
+        // Logarithmic progress keeps the plane moving across the canvas
+        // during long rounds instead of freezing visually at 6x.
         const progress =
-            Math.min(
-                (currentMult - 1) / 5.0,
+            Math.max(0, Math.min(
+                Math.log(Math.max(currentMult, 1)) / Math.log(150),
                 1.0
-            );
+            ));
 
 
         const startX = 0;
@@ -12249,7 +12260,7 @@ async function triggerWithdrawal() {
         document.getElementById("balanceDisplay").textContent || "";
 
     const val = prompt(
-        "Enter amount to withdraw (KES):\nAvailable: " + currentText
+        "Enter amount to withdraw (KES). Minimum: 1,000 KES.\nAvailable: " + currentText
     );
 
     if (val === null) {
@@ -12260,6 +12271,11 @@ async function triggerWithdrawal() {
 
     if (!Number.isFinite(amount) || amount <= 0) {
         alert("Enter a valid withdrawal amount.");
+        return;
+    }
+
+    if (amount < 1000) {
+        alert("Minimum withdrawal is KES 1,000. Please enter KES 1,000 or more.");
         return;
     }
 
