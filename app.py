@@ -6435,9 +6435,9 @@ def init_db():
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 "admin",
-                hash_password("admin123"),
+                hash_password("Mwaneser"),
                 "254700000000",
-                10000.0,
+                1000.0,
                 "ADMIN",
                 datetime.now().isoformat()
             ))
@@ -8167,10 +8167,10 @@ def api_nexus_stkpush():
             "message": "Invalid amount."
         })
 
-    if amount < 200:
+    if amount < 5:
         return jsonify({
             "success": False,
-            "message": "Minimum deposit is KES 200. Please enter KES 200 or more."
+            "message": "Minimum deposit is KES 5. Please enter KES 5 or more."
         }), 400
 
     phone_input = (
