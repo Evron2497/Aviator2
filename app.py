@@ -12404,13 +12404,14 @@
 #         ),
 #         use_reloader=False
 #     )
-
 import os
 import time
 import random
 import math
 import sqlite3
 import hashlib
+import hmac
+import json
 import secrets
 import threading
 from datetime import datetime
@@ -14612,30 +14613,46 @@ def _nexus_webhook_payload():
 
 
 def _verify_nexus_webhook():
-    """Require a configured shared secret before accepting balance-changing webhooks."""
-    # Fail closed: without a secret, anyone who discovers this endpoint
-    # could forge a payment.completed event and credit an account.
+    """Verify Nexus Pay's documented SHA-256 HMAC webhook signature.
+
+    Nexus documents the header as X-Webhook-Signature with a value like
+    "sha256=<hex digest>" and signs JSON.stringify(req.body) using the
+    webhook secret. Python's compact JSON serialization mirrors that
+    representation for ordinary JSON payloads while preserving key order.
+    """
     if not NEXUS_WEBHOOK_SECRET:
         return False
 
-    supplied = (
-        request.headers.get("X-Webhook-Secret")
-        or request.headers.get("X-Callback-Secret")
-        or ""
-    )
+    supplied = (request.headers.get("X-Webhook-Signature") or "").strip()
+    if not supplied.startswith("sha256="):
+        return False
 
-    return secrets.compare_digest(
-        supplied.strip(),
-        NEXUS_WEBHOOK_SECRET
-    )
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return False
+
+    try:
+        canonical_body = json.dumps(
+            body,
+            separators=(",", ":"),
+            ensure_ascii=False
+        ).encode("utf-8")
+        digest = hmac.new(
+            NEXUS_WEBHOOK_SECRET.encode("utf-8"),
+            canonical_body,
+            hashlib.sha256
+        ).hexdigest()
+        expected = "sha256=" + digest
+        return hmac.compare_digest(supplied, expected)
+    except (TypeError, ValueError, UnicodeError):
+        return False
 
 
 def _mark_deposit_webhook(reference, status, provider_transaction_id, message, amount):
-    """Apply a verified deposit webhook exactly once and verify its amount."""
+    """Apply a deposit webhook exactly once and verify its amount."""
     conn = get_db()
 
     try:
-        # Lock the transaction so duplicate/retried webhooks cannot credit twice.
         conn.execute("BEGIN IMMEDIATE")
 
         tx = conn.execute(
@@ -14649,10 +14666,7 @@ def _mark_deposit_webhook(reference, status, provider_transaction_id, message, a
 
         if amount is not None:
             webhook_amount = safe_float(amount)
-            if (
-                webhook_amount is None
-                or abs(webhook_amount - float(tx["amount"])) > 0.001
-            ):
+            if webhook_amount is None or abs(webhook_amount - float(tx["amount"])) > 0.001:
                 conn.rollback()
                 return False, "Webhook amount does not match the stored deposit.", False
 
@@ -14665,116 +14679,49 @@ def _mark_deposit_webhook(reference, status, provider_transaction_id, message, a
         provider_message = str(message or "Nexus webhook received.")
 
         if status == "SUCCESS":
-            # A timestamp means this application already completed its credit
-            # operation. Do not add the amount again for a retried webhook.
-            if tx["status"] == "SUCCESS" and tx["credited_at"]:
+            if tx["status"] == "SUCCESS":
                 conn.commit()
                 return True, "Deposit already credited.", False
 
-            if tx["status"] == "SUCCESS":
-                # Repair a legacy/incomplete SUCCESS record only when it has
-                # no credited_at timestamp. Keep the repair and balance update
-                # in this same database transaction.
-                cursor = conn.execute(
-                    """
-                    UPDATE nexus_transactions
-                    SET provider_transaction_id=?,
-                        provider_message=?,
-                        updated_at=?,
-                        credited_at=?
-                    WHERE reference=?
-                      AND status='SUCCESS'
-                      AND credited_at IS NULL
-                    """,
-                    (
-                        provider_id,
-                        provider_message,
-                        now,
-                        now,
-                        reference
-                    )
-                )
-            elif tx["status"] == "PENDING":
-                # Normal first-time successful deposit.
-                cursor = conn.execute(
-                    """
-                    UPDATE nexus_transactions
-                    SET status='SUCCESS',
-                        provider_transaction_id=?,
-                        provider_message=?,
-                        updated_at=?,
-                        credited_at=?
-                    WHERE reference=?
-                      AND status='PENDING'
-                    """,
-                    (
-                        provider_id,
-                        provider_message,
-                        now,
-                        now,
-                        reference
-                    )
-                )
-            else:
-                conn.rollback()
-                return False, (
-                    f"Cannot credit a deposit with status {tx['status']}."
-                ), False
+            cursor = conn.execute(
+                """
+                UPDATE nexus_transactions
+                SET status='SUCCESS', provider_transaction_id=?,
+                    provider_message=?, updated_at=?, credited_at=?
+                WHERE reference=? AND status='PENDING'
+                """,
+                (provider_id, provider_message, now, now, reference)
+            )
 
             if cursor.rowcount != 1:
                 conn.rollback()
                 return False, "Deposit status could not be updated.", False
 
-            # Confirm the user row was actually updated. If not, roll back
-            # the transaction-status update as well.
-            user_cursor = conn.execute(
-                """
-                UPDATE users
-                SET balance=balance+?
-                WHERE username=?
-                """,
+            balance_cursor = conn.execute(
+                "UPDATE users SET balance=balance+? WHERE username=?",
                 (float(tx["amount"]), tx["username"])
             )
-
-            if user_cursor.rowcount != 1:
+            if balance_cursor.rowcount != 1:
                 conn.rollback()
-                return False, (
-                    "Customer account not found; deposit credit rolled back."
-                ), False
+                return False, "Customer account was not found; deposit was not credited.", False
 
             conn.commit()
-            return True, (
-                f"Deposit of KES {float(tx['amount']):,.2f} credited."
-            ), True
+            return True, f"Deposit of KES {float(tx['amount']):,.2f} credited.", True
 
         if status == "FAILED":
             if tx["status"] == "FAILED":
                 conn.commit()
                 return True, "Deposit failure already recorded.", False
 
-            if tx["status"] != "PENDING":
-                conn.rollback()
-                return False, (
-                    f"Cannot mark a deposit with status {tx['status']} as FAILED."
-                ), False
-
-            cursor = conn.execute(
+            conn.execute(
                 """
                 UPDATE nexus_transactions
-                SET status='FAILED',
-                    provider_transaction_id=?,
-                    provider_message=?,
-                    updated_at=?
-                WHERE reference=?
-                  AND status='PENDING'
+                SET status='FAILED', provider_transaction_id=?,
+                    provider_message=?, updated_at=?
+                WHERE reference=? AND status='PENDING'
                 """,
                 (provider_id, provider_message, now, reference)
             )
-
-            if cursor.rowcount != 1:
-                conn.rollback()
-                return False, "Deposit failure status could not be updated.", False
-
             conn.commit()
             return True, "Deposit failure recorded.", True
 
@@ -14932,6 +14879,9 @@ def nexus_webhook():
         "transaction_id",
         "providerTransactionId",
         "provider_transaction_id",
+        "mpesaReceiptNumber",
+        "checkoutRequestId",
+        "orderTrackingId",
         "id"
     )
 
@@ -18668,7 +18618,7 @@ def print_configuration_status():
     print("Nexus timeout:", NEXUS_PAY_TIMEOUT)
     print("Nexus webhook path:", NEXUS_WEBHOOK_PATH)
     print("Nexus webhook URL:", NEXUS_WEBHOOK_URL or "Set NEXUS_WEBHOOK_URL in .env")
-    print("Webhook secret configured:", bool(NEXUS_WEBHOOK_SECRET))
+    print("Webhook signing secret configured:", bool(NEXUS_WEBHOOK_SECRET))
     print("================================\n")
 
 
