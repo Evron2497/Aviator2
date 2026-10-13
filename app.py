@@ -11962,11 +11962,11 @@ function validateDepositAmount() {
     const payButton = document.getElementById("mpesaPayBtn");
     const rawValue = amountInput.value.trim();
     const amount = Number(rawValue);
-    const isBelowMinimum = rawValue !== "" && (!Number.isFinite(amount) || amount < 200);
+    const isBelowMinimum = rawValue !== "" && (!Number.isFinite(amount) || amount < 5);
 
     warning.classList.toggle("visible", isBelowMinimum);
     amountInput.setCustomValidity(
-        isBelowMinimum ? "Minimum deposit is KES 200." : ""
+        isBelowMinimum ? "Minimum deposit is KES 5." : ""
     );
 
     if (payButton) {
@@ -12013,13 +12013,13 @@ async function requestNexusDeposit() {
 
     if (!Number.isFinite(amount)) {
         status.textContent = "Enter a valid deposit amount.";
-        alert("Minimum deposit is KES 200.");
+        alert("Minimum deposit is KES 5.");
         return;
     }
 
-    if (amount < 200) {
-        status.textContent = "Minimum deposit is KES 200. Please enter KES 200 or more.";
-        alert("Deposit not allowed: the minimum deposit is KES 200.");
+    if (amount < 5) {
+        status.textContent = "Minimum deposit is KES 5. Please enter KES 5 or more.";
+        alert("Deposit not allowed: the minimum deposit is KES 5.");
         return;
     }
 
@@ -12260,7 +12260,7 @@ async function triggerWithdrawal() {
         document.getElementById("balanceDisplay").textContent || "";
 
     const val = prompt(
-        "Enter amount to withdraw (KES). Minimum: 1,000 KES.\nAvailable: " + currentText
+        "Enter amount to withdraw (KES). Minimum: 5 KES.\nAvailable: " + currentText
     );
 
     if (val === null) {
@@ -12274,8 +12274,8 @@ async function triggerWithdrawal() {
         return;
     }
 
-    if (amount < 1000) {
-        alert("Minimum withdrawal is KES 1,000. Please enter KES 1,000 or more.");
+    if (amount < 1) {
+        alert("Minimum withdrawal is KES 5. Please enter KES 5 or more.");
         return;
     }
 
