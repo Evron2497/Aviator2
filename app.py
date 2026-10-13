@@ -7077,9 +7077,9 @@ def nexus_stk_push(
 
     amount = safe_float(amount)
 
-    if amount is None or amount < 200:
+    if amount is None or amount < 5:
         raise ValueError(
-            "Minimum deposit is KES 200."
+            "Minimum deposit is KES 5."
         )
 
     if amount != round(amount):
