@@ -16645,7 +16645,7 @@ canvas {
             id="mpesaAmount"
             type="number"
             min="200"
-            step="1"
+            step="10"
             value="200"
             required
             oninput="validateDepositAmount()"
@@ -16795,8 +16795,8 @@ canvas {
                             id="amount1"
                             class="amount-input"
                             value="20.00"
-                            min="1"
-                            step="1"
+                            min="20"
+                            step="10"
                         >
 
                         <button
@@ -16940,8 +16940,8 @@ canvas {
                             id="amount2"
                             class="amount-input"
                             value="20.00"
-                            min="1"
-                            step="1"
+                            min="20"
+                            step="10"
                         >
 
                         <button
@@ -18001,8 +18001,8 @@ function adjustBet(
         + delta;
 
 
-    if (val < 1) {
-        val = 1;
+    if (val < 20) {
+        val = 20;
     }
 
 
@@ -18224,11 +18224,11 @@ function validateDepositAmount() {
     const payButton = document.getElementById("mpesaPayBtn");
     const rawValue = amountInput.value.trim();
     const amount = Number(rawValue);
-    const isBelowMinimum = rawValue !== "" && (!Number.isFinite(amount) || amount < 5);
+    const isBelowMinimum = rawValue !== "" && (!Number.isFinite(amount) || amount < 200);
 
     warning.classList.toggle("visible", isBelowMinimum);
     amountInput.setCustomValidity(
-        isBelowMinimum ? "Minimum deposit is KES 5." : ""
+        isBelowMinimum ? "Minimum deposit is KES 200." : ""
     );
 
     if (payButton) {
@@ -18279,9 +18279,9 @@ async function requestNexusDeposit() {
         return;
     }
 
-    if (amount < 5) {
-        status.textContent = "Minimum deposit is KES 5. Please enter KES 5 or more.";
-        alert("Deposit not allowed: the minimum deposit is KES 5.");
+    if (amount < 200) {
+        status.textContent = "Minimum deposit is KES 200. Please enter KES 200 or more.";
+        alert("Deposit not allowed: the minimum deposit is KES 200.");
         return;
     }
 
@@ -18522,7 +18522,7 @@ async function triggerWithdrawal() {
         document.getElementById("balanceDisplay").textContent || "";
 
     const val = prompt(
-        "Enter amount to withdraw (KES). Minimum: 5 KES.\nAvailable: " + currentText
+        "Enter amount to withdraw (KES). Minimum: 1000 KES.\nAvailable: " + currentText
     );
 
     if (val === null) {
@@ -18537,7 +18537,7 @@ async function triggerWithdrawal() {
     }
 
     if (amount < 1) {
-        alert("Minimum withdrawal is KES 5. Please enter KES 5 or more.");
+        alert("Minimum withdrawal is KES 200. Please enter KES 200 or more.");
         return;
     }
 
