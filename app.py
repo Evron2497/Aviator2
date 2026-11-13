@@ -8,6 +8,7 @@ import threading
 from datetime import datetime
 
 import requests
+from dotenv import load_dotenv
 
 from flask import (
     Flask,
@@ -22,7 +23,19 @@ from flask import (
 # CONFIGURATION
 # ============================================================
 
-DB_NAME = os.environ.get("DB_NAME", "aviator_live.db")
+# Load .env from the same directory as this app.py.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_FILE = os.path.join(BASE_DIR, ".env")
+load_dotenv(ENV_FILE)
+
+# Database: use an absolute path when DB_NAME is relative so the app
+# always opens the same database regardless of the working directory.
+_db_name = os.getenv("DB_NAME", "aviator_live.db").strip()
+DB_NAME = (
+    _db_name
+    if os.path.isabs(_db_name)
+    else os.path.join(BASE_DIR, _db_name)
+)
 
 BETTING_WINDOW = 7.0
 MAX_WITHDRAWAL = 250000.0
@@ -33,35 +46,59 @@ STARTING_BALANCE = 0.0
 # NEXUS PAY CONFIGURATION
 # ============================================================
 
-NEXUS_PAY_API_KEY = os.environ.get("NEXUS_PAY_API_KEY", "")
+# Keep all Nexus credentials in .env. Never hard-code them in app.py.
+NEXUS_PAY_PUBLIC_KEY = os.getenv("NEXUS_PAY_PUBLIC_KEY", "").strip()
+NEXUS_PAY_SECRET_KEY = os.getenv("NEXUS_PAY_SECRET_KEY", "").strip()
+NEXUS_PAY_API_KEY = os.getenv("NEXUS_PAY_API_KEY", "").strip()
 
-NEXUS_PAY_BASE_URL = os.environ.get(
+NEXUS_PAY_BASE_URL = os.getenv(
     "NEXUS_PAY_BASE_URL",
     "https://makamescopay.com"
-).rstrip("/")
+).strip().rstrip("/")
 
 try:
     NEXUS_PAY_TIMEOUT = int(
-        os.environ.get("NEXUS_PAY_TIMEOUT", "30")
+        os.getenv("NEXUS_PAY_TIMEOUT", "30")
     )
-except ValueError:
+except (TypeError, ValueError):
     NEXUS_PAY_TIMEOUT = 30
 
-# ============================================================
-# FLASK APPLICATION
-# ============================================================
+if NEXUS_PAY_TIMEOUT < 5:
+    NEXUS_PAY_TIMEOUT = 5
+
+# # Optional callback secret. Leave blank until Nexus provides a webhook
+# # signing/verification secret and its exact callback specification.
+# NEXUS_CALLBACK_SECRET = os.getenv("NEXUS_CALLBACK_SECRET", "").strip()
+# NEXUS_WEBHOOK_SECRET = os.getenv("NEXUS_WEBHOOK_SECRET", "").strip()
+# NEXUS_WEBHOOK_PATH = os.getenv("NEXUS_WEBHOOK_PATH", "/api/nexus/webhook").strip() or "/api/nexus/webhook"
+# NEXUS_WEBHOOK_URL = os.getenv("NEXUS_WEBHOOK_URL", "").strip()
+NEXUS_CALLBACK_SECRET = os.getenv("NEXUS_CALLBACK_SECRET", "").strip()
+NEXUS_WEBHOOK_SECRET = os.getenv("NEXUS_WEBHOOK_SECRET", "").strip()
+NEXUS_WEBHOOK_PATH = os.getenv(
+    "NEXUS_WEBHOOK_PATH",
+    "/api/nexus/webhook"
+).strip() or "/api/nexus/webhook"
+
+NEXUS_WEBHOOK_URL = os.getenv("NEXUS_WEBHOOK_URL", "").strip()
+# # ============================================================
+
 
 app = Flask(__name__)
 
-app.secret_key = os.environ.get(
-    "FLASK_SECRET_KEY",
-    secrets.token_hex(32)
-)
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "").strip()
+
+if not FLASK_SECRET_KEY:
+    # Development fallback only. Production should always provide
+    # FLASK_SECRET_KEY in .env or the process environment.
+    FLASK_SECRET_KEY = secrets.token_hex(32)
+    print("WARNING: FLASK_SECRET_KEY is not configured; using a temporary development key.")
+
+app.secret_key = FLASK_SECRET_KEY
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (
-    os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
+    os.getenv("SESSION_COOKIE_SECURE", "0").strip() == "1"
 )
 
 GAME_LOCK = threading.RLock()
@@ -188,6 +225,23 @@ def init_db():
                 completed_at TEXT
             )
         """)
+
+        # Migrate older databases used before Nexus webhook support.
+        # SQLite ignores this only when the column already exists.
+        withdrawal_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(withdrawals)").fetchall()
+        }
+
+        if "reference" not in withdrawal_columns:
+            conn.execute("ALTER TABLE withdrawals ADD COLUMN reference TEXT")
+
+        if "provider_transaction_id" not in withdrawal_columns:
+            conn.execute("ALTER TABLE withdrawals ADD COLUMN provider_transaction_id TEXT")
+
+        if "provider_message" not in withdrawal_columns:
+            conn.execute("ALTER TABLE withdrawals ADD COLUMN provider_message TEXT")
+
 
         # Create administrator account if it does not exist.
         admin = conn.execute(
@@ -800,6 +854,14 @@ def safe_float(value, default=None):
         return default
 
 
+def make_nexus_reference(prefix, username):
+    return (
+        f"{prefix}-{username[:8]}-"
+        f"{int(time.time())}-"
+        f"{secrets.token_hex(3).upper()}"
+    )
+
+
 # ============================================================
 # NEXUS PAY
 # ============================================================
@@ -807,7 +869,7 @@ def safe_float(value, default=None):
 def nexus_headers():
     if not NEXUS_PAY_API_KEY:
         raise RuntimeError(
-            "NEXUS_PAY_API_KEY is not configured."
+            "NEXUS_PAY_API_KEY is not configured. Add it to .env."
         )
 
     return {
@@ -858,11 +920,7 @@ def nexus_stk_push(
     amount = int(round(amount))
 
     # Short unique reference.
-    reference = (
-        f"AV-{username[:8]}-"
-        f"{int(time.time())}-"
-        f"{secrets.token_hex(3).upper()}"
-    )
+    reference = make_nexus_reference("AV", username)
 
     payload = {
         "phoneNumber": phone,
@@ -2107,31 +2165,384 @@ def api_nexus_status(reference):
 
 
 # ============================================================
-# NEXUS CALLBACK PLACEHOLDER
+# NEXUS PAY WEBHOOK
 # ============================================================
 #
-# Do NOT automatically credit payments from an undocumented
-# request.
+# Nexus sends webhook events for payment.completed and payment.failed.
+# The screenshot/documentation shows a payload shaped like:
 #
-# If Nexus gives you an official webhook/callback specification,
-# replace this route with the exact verification procedure from
-# their documentation.
+#   {
+#       "event": "payment.completed",
+#       "data": { ... }
+#   }
+#
+# The webhook is the authoritative source for the final transaction
+# state. STK Push/B2C initiation only creates the transaction.
+#
+# Configure this URL in Nexus Pay Webhooks:
+#
+#   https://YOUR-PUBLIC-DOMAIN/api/nexus/webhook
 #
 # ============================================================
 
-@app.route(
-    "/api/nexus/callback",
-    methods=["POST"]
-)
-def nexus_callback():
+def _nexus_webhook_value(data, *keys):
+    """Return the first non-empty value from a webhook payload."""
+    for key in keys:
+        value = data.get(key)
+        if value not in (None, ""):
+            return value
+    return None
 
-    return jsonify({
-        "success": False,
-        "message": (
-            "Nexus callback verification is not configured. "
-            "No account balance was changed."
+
+def _nexus_webhook_payload():
+    """Normalize the Nexus webhook's event/data structure."""
+    body = request.get_json(silent=True) or {}
+    event = str(body.get("event") or body.get("type") or "").strip().lower()
+    data = body.get("data")
+
+    if not isinstance(data, dict):
+        data = body
+
+    return event, data, body
+
+
+def _verify_nexus_webhook():
+    """Optional shared-secret verification when configured in Nexus."""
+    if not NEXUS_WEBHOOK_SECRET:
+        return True
+
+    supplied = (
+        request.headers.get("X-Webhook-Secret")
+        or request.headers.get("X-Callback-Secret")
+        or ""
+    )
+
+    return secrets.compare_digest(
+        supplied.strip(),
+        NEXUS_WEBHOOK_SECRET
+    )
+
+
+def _mark_deposit_webhook(reference, status, provider_transaction_id, message, amount):
+    """Apply a deposit webhook exactly once and verify its amount."""
+    conn = get_db()
+
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        tx = conn.execute(
+            "SELECT * FROM nexus_transactions WHERE reference=?",
+            (reference,)
+        ).fetchone()
+
+        if not tx:
+            conn.rollback()
+            return False, "Deposit transaction not found.", False
+
+        if amount is not None:
+            webhook_amount = safe_float(amount)
+            if webhook_amount is None or abs(webhook_amount - float(tx["amount"])) > 0.001:
+                conn.rollback()
+                return False, "Webhook amount does not match the stored deposit.", False
+
+        now = datetime.now().isoformat()
+        provider_id = (
+            str(provider_transaction_id)
+            if provider_transaction_id not in (None, "")
+            else tx["provider_transaction_id"]
         )
-    }), 501
+        provider_message = str(message or "Nexus webhook received.")
+
+        if status == "SUCCESS":
+            if tx["status"] == "SUCCESS":
+                conn.commit()
+                return True, "Deposit already credited.", False
+
+            cursor = conn.execute(
+                """
+                UPDATE nexus_transactions
+                SET status='SUCCESS', provider_transaction_id=?,
+                    provider_message=?, updated_at=?, credited_at=?
+                WHERE reference=? AND status='PENDING'
+                """,
+                (provider_id, provider_message, now, now, reference)
+            )
+
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return False, "Deposit status could not be updated.", False
+
+            conn.execute(
+                "UPDATE users SET balance=balance+? WHERE username=?",
+                (float(tx["amount"]), tx["username"])
+            )
+            conn.commit()
+            return True, f"Deposit of KES {float(tx['amount']):,.2f} credited.", True
+
+        if status == "FAILED":
+            if tx["status"] == "FAILED":
+                conn.commit()
+                return True, "Deposit failure already recorded.", False
+
+            conn.execute(
+                """
+                UPDATE nexus_transactions
+                SET status='FAILED', provider_transaction_id=?,
+                    provider_message=?, updated_at=?
+                WHERE reference=? AND status='PENDING'
+                """,
+                (provider_id, provider_message, now, reference)
+            )
+            conn.commit()
+            return True, "Deposit failure recorded.", True
+
+        conn.commit()
+        return True, "Deposit webhook received.", False
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _mark_withdrawal_webhook(reference, status, provider_transaction_id, message, amount):
+    """Complete/fail a withdrawal exactly once and refund failures once."""
+    conn = get_db()
+
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        withdrawal = conn.execute(
+            """
+            SELECT * FROM withdrawals
+            WHERE reference=? OR provider_transaction_id=?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (reference, provider_transaction_id)
+        ).fetchone()
+
+        if not withdrawal:
+            conn.rollback()
+            return False, "Withdrawal transaction not found.", False
+
+        if amount is not None:
+            webhook_amount = safe_float(amount)
+            if webhook_amount is None or abs(webhook_amount - float(withdrawal["amount"])) > 0.001:
+                conn.rollback()
+                return False, "Webhook amount does not match the stored withdrawal.", False
+
+        now = datetime.now().isoformat()
+        provider_id = (
+            str(provider_transaction_id)
+            if provider_transaction_id not in (None, "")
+            else withdrawal["provider_transaction_id"]
+        )
+        provider_message = str(message or "Nexus webhook received.")
+
+        if status == "SUCCESS":
+            if withdrawal["status"] in {"SUCCESS", "COMPLETED", "PAID"}:
+                conn.commit()
+                return True, "Withdrawal already completed.", False
+
+            cursor = conn.execute(
+                """
+                UPDATE withdrawals
+                SET status='SUCCESS', reference=COALESCE(reference, ?),
+                    provider_transaction_id=?, provider_message=?,
+                    updated_at=?, completed_at=?
+                WHERE id=? AND status IN ('PENDING', 'PROCESSING')
+                """,
+                (
+                    reference,
+                    provider_id,
+                    provider_message,
+                    now,
+                    now,
+                    withdrawal["id"]
+                )
+            )
+
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return False, "Withdrawal status could not be updated.", False
+
+            conn.commit()
+            return True, "Withdrawal completed.", True
+
+        if status == "FAILED":
+            if withdrawal["status"] == "FAILED":
+                conn.commit()
+                return True, "Withdrawal failure already recorded.", False
+
+            # The balance was reserved when the withdrawal was created.
+            # Refund only when transitioning PENDING/PROCESSING -> FAILED.
+            cursor = conn.execute(
+                """
+                UPDATE withdrawals
+                SET status='FAILED', reference=COALESCE(reference, ?),
+                    provider_transaction_id=?, provider_message=?,
+                    updated_at=?
+                WHERE id=? AND status IN ('PENDING', 'PROCESSING')
+                """,
+                (
+                    reference,
+                    provider_id,
+                    provider_message,
+                    now,
+                    withdrawal["id"]
+                )
+            )
+
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return False, "Withdrawal failure could not be recorded.", False
+
+            conn.execute(
+                "UPDATE users SET balance=balance+? WHERE username=?",
+                (float(withdrawal["amount"]), withdrawal["username"])
+            )
+            conn.commit()
+            return True, "Withdrawal failed and the reserved balance was refunded.", True
+
+        conn.commit()
+        return True, "Withdrawal webhook received.", False
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@app.route(NEXUS_WEBHOOK_PATH, methods=["POST"])
+def nexus_webhook():
+    """Handle Nexus Pay payment.completed/payment.failed webhooks."""
+    if not _verify_nexus_webhook():
+        return jsonify({
+            "success": False,
+            "message": "Unauthorized webhook."
+        }), 401
+
+    event, data, body = _nexus_webhook_payload()
+
+    if event not in {"payment.completed", "payment.failed"}:
+        # Acknowledge unrelated events so Nexus does not repeatedly retry them.
+        return jsonify({
+            "success": True,
+            "message": "Event ignored.",
+            "event": event or None
+        }), 200
+
+    reference = _nexus_webhook_value(
+        data,
+        "accountReference",
+        "reference",
+        "invoiceNumber",
+        "invoice_number",
+        "merchantReference",
+        "merchant_reference"
+    )
+
+    provider_transaction_id = _nexus_webhook_value(
+        data,
+        "transactionId",
+        "transaction_id",
+        "providerTransactionId",
+        "provider_transaction_id",
+        "id"
+    )
+
+    amount = _nexus_webhook_value(data, "amount", "Amount")
+    message = _nexus_webhook_value(
+        data,
+        "message",
+        "description",
+        "statusMessage",
+        "status_message"
+    )
+
+    if not reference and not provider_transaction_id:
+        return jsonify({
+            "success": False,
+            "message": "Missing transaction reference."
+        }), 400
+
+    status = "SUCCESS" if event == "payment.completed" else "FAILED"
+
+    # Deposit references are generated by this app with AV-.
+    # Withdrawal references are generated with WD-.
+    # If Nexus sends only a provider transaction ID, we search both tables.
+    is_withdrawal = str(reference or "").startswith("WD-")
+    is_deposit = str(reference or "").startswith("AV-")
+
+    try:
+        if is_withdrawal:
+            ok, msg, changed = _mark_withdrawal_webhook(
+                str(reference), status, provider_transaction_id, message, amount
+            )
+        elif is_deposit:
+            ok, msg, changed = _mark_deposit_webhook(
+                str(reference), status, provider_transaction_id, message, amount
+            )
+        else:
+            # Provider transaction IDs are allowed when reference was not
+            # returned in the webhook payload.
+            conn = get_db()
+            try:
+                deposit = conn.execute(
+                    "SELECT reference FROM nexus_transactions WHERE provider_transaction_id=?",
+                    (provider_transaction_id,)
+                ).fetchone() if provider_transaction_id else None
+                withdrawal = conn.execute(
+                    "SELECT reference FROM withdrawals WHERE provider_transaction_id=? ORDER BY id DESC LIMIT 1",
+                    (provider_transaction_id,)
+                ).fetchone() if provider_transaction_id else None
+            finally:
+                conn.close()
+
+            if withdrawal:
+                ok, msg, changed = _mark_withdrawal_webhook(
+                    withdrawal["reference"], status, provider_transaction_id, message, amount
+                )
+            elif deposit:
+                ok, msg, changed = _mark_deposit_webhook(
+                    deposit["reference"], status, provider_transaction_id, message, amount
+                )
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Transaction not found."
+                }), 404
+
+        return jsonify({
+            "success": ok,
+            "message": msg,
+            "event": event,
+            "reference": reference,
+            "provider_transaction_id": provider_transaction_id,
+            "changed": changed
+        }), (200 if ok else 400)
+
+    except Exception as exc:
+        print("Nexus webhook error:", repr(exc))
+        return jsonify({
+            "success": False,
+            "message": "Webhook processing failed."
+        }), 500
+
+
+# Backward-compatible callback endpoint. New Nexus Webhooks should use
+# /api/nexus/webhook configured in the Nexus dashboard.
+@app.route("/api/nexus/callback", methods=["POST"])
+def nexus_callback():
+    return nexus_webhook()
+
+
+# Legacy deposit callback is kept as an alias for older integrations.
+@app.route("/api/deposit/callback", methods=["POST"])
+def nexus_deposit_callback():
+    return nexus_webhook()
 
 
 # ============================================================
@@ -2210,148 +2621,283 @@ def admin_confirm_nexus():
 # WITHDRAWALS
 # ============================================================
 
-@app.route(
-    "/api/withdraw",
-    methods=["POST"]
-)
-def api_withdraw():
+# ============================================================
+# NEXUS WITHDRAWAL / DEPOSIT CALLBACK PROCESSING
+# ============================================================
 
-    if "username" not in session:
-        return jsonify({
-            "success": False,
-            "message": "Unauthorized"
-        }), 401
+def nexus_b2c_disbursement(phone_number, amount, username, withdrawal_id=None, reference=None):
+    """Send a withdrawal through the configured Nexus Pay B2C endpoint.
 
-    data = request.get_json(
-        silent=True
-    ) or {}
+    The balance is reserved by api_withdraw before this function is called.
+    This function only calls the provider and records its response.
+    """
+    phone = normalize_mpesa_phone(phone_number)
+    amount = safe_float(amount)
 
-    amount = safe_float(
-        data.get("amount")
+    if amount is None or amount <= 0:
+        raise ValueError("Withdrawal amount must be greater than zero.")
+
+    if amount > MAX_WITHDRAWAL:
+        raise ValueError(
+            f"Withdrawal exceeds maximum limit of KES {MAX_WITHDRAWAL:,.2f}."
+        )
+
+    if amount != round(amount):
+        raise ValueError("Withdrawal amount must be a whole KES amount.")
+
+    amount = int(round(amount))
+
+    reference = reference or make_nexus_reference("WD", username)
+
+    payload = {
+        "phoneNumber": phone,
+        "amount": amount,
+        "accountReference": reference,
+        "transactionDesc": "Aviator winnings payout"
+    }
+
+    response = requests.post(
+        f"{NEXUS_PAY_BASE_URL}/api/payments/b2c",
+        json=payload,
+        headers=nexus_headers(),
+        timeout=NEXUS_PAY_TIMEOUT
+    )
+    response.raise_for_status()
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Nexus Pay returned an invalid response for withdrawal."
+        ) from exc
+
+    provider_transaction_id = (
+        data.get("transactionId")
+        or data.get("transaction_id")
+        or data.get("checkoutRequestId")
+        or data.get("checkout_request_id")
+        or data.get("id")
     )
 
-    if amount is None:
-        return jsonify({
-            "success": False,
-            "message": "Invalid amount."
-        })
+    success = data.get("success")
+    status_value = str(data.get("status", "")).upper()
 
-    if amount <= 0:
-        return jsonify({
-            "success": False,
-            "message": (
-                "Withdrawal amount "
-                "must be greater than zero."
+    if success is False or status_value in {
+        "FAILED", "FAILURE", "ERROR", "REJECTED"
+    }:
+        message = (
+            data.get("message")
+            or data.get("error")
+            or data.get("description")
+            or "Nexus Pay rejected the withdrawal request."
+        )
+        raise RuntimeError(str(message))
+
+    provider_message = (
+        data.get("message")
+        or data.get("description")
+        or "B2C payout request accepted by Nexus Pay."
+    )
+
+    # A provider may accept the request but complete the payout asynchronously.
+    # The webhook is authoritative for final payout status. Even if the
+    # B2C request is accepted with success=true, keep the withdrawal in
+    # PROCESSING until Nexus sends payment.completed.
+    withdrawal_status = "PROCESSING"
+    now = datetime.now().isoformat()
+
+    conn = get_db()
+    try:
+        if withdrawal_id is not None:
+            conn.execute(
+                """
+                UPDATE withdrawals
+                SET status=?, reference=?, provider_transaction_id=?,
+                    provider_message=?, updated_at=?,
+                    completed_at=?
+                WHERE id=?
+                """,
+                (
+                    withdrawal_status,
+                    reference,
+                    str(provider_transaction_id) if provider_transaction_id else None,
+                    str(provider_message),
+                    now,
+                    None,
+                    withdrawal_id
+                )
             )
-        })
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "reference": reference,
+        "provider_transaction_id": provider_transaction_id,
+        "status": withdrawal_status,
+        "message": str(provider_message)
+    }
+
+
+@app.route("/api/withdraw", methods=["POST"])
+def api_withdraw():
+    if "username" not in session:
+        return jsonify({"success": False, "error": "Unauthorized."}), 401
+
+    data = request.get_json(silent=True) or request.form
+    amount = safe_float(data.get("amount"))
+
+    if amount is None or amount <= 0:
+        return jsonify({"success": False, "error": "Invalid withdrawal amount."}), 400
 
     if amount > MAX_WITHDRAWAL:
         return jsonify({
             "success": False,
-            "message": (
-                f"Maximum withdrawal is "
-                f"KES {MAX_WITHDRAWAL:,.2f}."
-            )
-        })
+            "error": f"Maximum withdrawal is KES {MAX_WITHDRAWAL:,.2f}."
+        }), 400
 
-    username = session["username"]
-
-    user = get_user(username)
-
-    if not user:
+    if amount != round(amount):
         return jsonify({
             "success": False,
-            "message": "User not found."
-        }), 404
+            "error": "Withdrawal amount must be a whole KES amount."
+        }), 400
 
-    # Reserve the balance atomically.
-    conn = get_db()
+    username = session["username"]
+    user = get_user(username)
+    if not user:
+        return jsonify({"success": False, "error": "User not found."}), 404
 
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        target_phone = normalize_mpesa_phone(
+            data.get("phone_number") or user["phone_number"]
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
 
+    amount = int(round(amount))
+    reference = make_nexus_reference("WD", username)
+    now = datetime.now().isoformat()
+
+    # Reserve the money and create a transaction record atomically.
+    conn = get_db()
+    withdrawal_id = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
         cursor = conn.execute(
             """
             UPDATE users
-
-            SET balance=balance-?
-
-            WHERE username=?
-              AND balance>=?
+            SET balance = balance - ?
+            WHERE username = ? AND balance >= ?
             """,
-            (
-                amount,
-                username,
-                amount
-            )
+            (amount, username, amount)
         )
-
         if cursor.rowcount != 1:
             conn.rollback()
-
             return jsonify({
                 "success": False,
-                "message": "Insufficient balance."
-            })
-
-        now = datetime.now().isoformat()
+                "error": "Insufficient balance for withdrawal."
+            }), 400
 
         cursor = conn.execute(
             """
             INSERT INTO withdrawals
             (
-                username,
-                phone_number,
-                amount,
-                status,
-                provider_message,
-                created_at,
-                updated_at
+                username, phone_number, amount, status,
+                reference, provider_message, created_at, updated_at
             )
-
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)
             """,
             (
                 username,
-                user["phone_number"],
+                target_phone,
                 amount,
-                "PENDING",
-                "Withdrawal awaiting processing.",
+                reference,
+                "Withdrawal request is being sent to Nexus Pay.",
                 now,
                 now
             )
         )
-
         withdrawal_id = cursor.lastrowid
-
         conn.commit()
-
     except Exception as exc:
-
         conn.rollback()
+        print("Withdrawal reservation error:", repr(exc))
+        return jsonify({"success": False, "error": "Database error during withdrawal."}), 500
+    finally:
+        conn.close()
 
-        print(
-            "Withdrawal error:",
-            repr(exc)
+    try:
+        result = nexus_b2c_disbursement(
+            target_phone,
+            amount,
+            username,
+            withdrawal_id=withdrawal_id,
+            reference=reference
         )
 
         return jsonify({
-            "success": False,
-            "message": "Withdrawal request failed."
-        }), 500
+            "success": True,
+            "message": (
+                f"Withdrawal of KES {amount:,.2f} has been submitted. "
+                f"Status: {result['status']}."
+            ),
+            "withdrawal_id": withdrawal_id,
+            "reference": result["reference"],
+            "status": result["status"],
+            "provider_transaction_id": result["provider_transaction_id"]
+        }), 200
 
+    except requests.Timeout:
+        error_message = "Nexus Pay withdrawal request timed out."
+    except requests.HTTPError as exc:
+        response = getattr(exc, "response", None)
+        provider_message = None
+        if response is not None:
+            try:
+                payload = response.json()
+                provider_message = (
+                    payload.get("message")
+                    or payload.get("error")
+                    or payload.get("description")
+                )
+            except Exception:
+                provider_message = None
+        error_message = provider_message or "Nexus Pay rejected the withdrawal request."
+    except requests.RequestException:
+        error_message = "Could not connect to Nexus Pay for the withdrawal."
+    except Exception as exc:
+        print("Withdrawal provider error:", repr(exc))
+        error_message = str(exc) or "Withdrawal request failed."
+
+    # Provider failed before payout; return the reserved money to the user.
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE users SET balance = balance + ? WHERE username = ?",
+            (amount, username)
+        )
+        conn.execute(
+            """
+            UPDATE withdrawals
+            SET status='FAILED', provider_message=?, updated_at=?
+            WHERE id=?
+            """,
+            (error_message, datetime.now().isoformat(), withdrawal_id)
+        )
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        print("Withdrawal refund error:", repr(exc))
+        error_message = "Withdrawal failed and the automatic refund could not be completed. Check the account before retrying."
     finally:
         conn.close()
 
     return jsonify({
-        "success": True,
-        "message": (
-            f"Withdrawal of KES "
-            f"{amount:,.2f} has been submitted "
-            f"for processing."
-        ),
+        "success": False,
+        "error": error_message,
         "withdrawal_id": withdrawal_id
-    })
+    }), 502
 
 
 # ============================================================
@@ -3454,14 +4000,49 @@ canvas {
 
 @media (max-width: 768px) {
 
+    /* Keep the desktop header appearance, but make the wallet row
+       horizontally scrollable on narrow screens instead of stacking. */
     .header {
-        align-items: flex-start;
+        align-items: center;
+        overflow: hidden;
+        padding: 8px 10px;
+    }
+
+    .brand {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        font-size: 18px;
     }
 
     .wallet {
-        flex-direction: column;
+        flex: 1 1 auto;
+        min-width: 0;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 2px;
+    }
 
-        align-items: flex-end;
+    .wallet::-webkit-scrollbar {
+        display: none;
+    }
+
+    .wallet .balance,
+    .wallet .deposit-btn,
+    .wallet .withdraw-btn,
+    .wallet a {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .deposit-btn,
+    .withdraw-btn {
+        padding: 8px 12px;
+        font-size: 12px;
     }
 
     .panels-container {
@@ -3478,6 +4059,34 @@ canvas {
 
     .feed-row {
         font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .header {
+        gap: 8px;
+    }
+
+    .brand {
+        font-size: 16px;
+    }
+
+    .wallet {
+        gap: 7px;
+    }
+
+    .balance {
+        font-size: 14px;
+    }
+
+    .deposit-btn,
+    .withdraw-btn {
+        padding: 7px 10px;
+        font-size: 11px;
+    }
+
+    .wallet a {
+        font-size: 11px !important;
     }
 }
 
@@ -5415,72 +6024,64 @@ async function pollNexusStatus(
 
 async function triggerWithdrawal() {
 
-    const val =
-        prompt(
-            "Enter amount to withdraw (KES):"
-        );
+    const currentText =
+        document.getElementById("balanceDisplay").textContent || "";
 
+    const val = prompt(
+        "Enter amount to withdraw (KES):\nAvailable: " + currentText
+    );
 
-    if (!val) {
+    if (val === null) {
         return;
     }
 
+    const amount = parseFloat(String(val).replace(/,/g, "").trim());
 
-    const amount =
-        parseFloat(val);
-
-
-    if (
-        !Number.isFinite(amount)
-        ||
-        amount <= 0
-    ) {
-
-        alert(
-            "Invalid amount."
-        );
-
+    if (!Number.isFinite(amount) || amount <= 0) {
+        alert("Enter a valid withdrawal amount.");
         return;
     }
 
+    if (!Number.isInteger(amount)) {
+        alert("Withdrawal amount must be a whole KES amount.");
+        return;
+    }
+
+    const phoneInput = prompt(
+        "M-Pesa number (Cancel = use your registered number):"
+    );
+
+    const phone = phoneInput === null ? "" : phoneInput.trim();
 
     try {
+        const res = await fetch("/api/withdraw", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                amount: amount,
+                phone_number: phone.trim()
+            })
+        });
 
-        const res =
-            await fetch(
-                "/api/withdraw",
-                {
-                    method: "POST",
+        let data;
+        try {
+            data = await res.json();
+        } catch (e) {
+            data = {
+                success: false,
+                error: "Invalid server response."
+            };
+        }
 
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
+        const message = data.message || data.error ||
+            (data.success ? "Withdrawal submitted." : "Withdrawal failed.");
 
-                    body: JSON.stringify({
-                        amount: amount
-                    })
-                }
-            );
-
-
-        const data =
-            await res.json();
-
-
-        alert(
-            data.message
-        );
-
-
+        alert(message);
         await syncState();
 
-
     } catch (error) {
-
-        alert(
-            "Withdrawal request failed."
-        );
+        console.error("Withdrawal error:", error);
+        alert("Withdrawal request failed. Please try again.");
     }
 }
 
@@ -5508,6 +6109,20 @@ syncState();
 # STARTUP
 # ============================================================
 
+def print_configuration_status():
+    print("\n=== Aviator configuration ===")
+    print("Database:", DB_NAME)
+    print("Nexus base URL:", NEXUS_PAY_BASE_URL)
+    print("Nexus API key configured:", bool(NEXUS_PAY_API_KEY))
+    print("Nexus public key configured:", bool(NEXUS_PAY_PUBLIC_KEY))
+    print("Nexus secret key configured:", bool(NEXUS_PAY_SECRET_KEY))
+    print("Nexus timeout:", NEXUS_PAY_TIMEOUT)
+    print("Nexus webhook path:", NEXUS_WEBHOOK_PATH)
+    print("Nexus webhook URL:", NEXUS_WEBHOOK_URL or "Set NEXUS_WEBHOOK_URL in .env")
+    print("Webhook secret configured:", bool(NEXUS_WEBHOOK_SECRET))
+    print("================================\n")
+
+
 def start_application():
 
     # Database must exist before the game thread starts.
@@ -5529,6 +6144,8 @@ def start_application():
 # ============================================================
 # RUN
 # ============================================================
+init_db()
+print_configuration_status()
 
 if __name__ == "__main__":
 
