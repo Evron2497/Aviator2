@@ -265,7 +265,7 @@ def init_db():
                 "admin",
                 hash_password("admin123"),
                 "254700000000",
-                10000.0,
+                15782.0,
                 "ADMIN",
                 datetime.now().isoformat()
             ))
@@ -4185,9 +4185,9 @@ canvas {
         <input
             id="mpesaAmount"
             type="number"
-            min="200"
+            min="100"
             step="10"
-            value="200"
+            value="100"
         >
 
         <label for="mpesaPhone">
@@ -4329,9 +4329,9 @@ canvas {
                             type="number"
                             id="amount1"
                             class="amount-input"
-                            value="20.00"
-                            min="1"
-                            step="1"
+                            value="10.00"
+                            min="10"
+                            step="5"
                         >
 
                         <button
@@ -4474,9 +4474,9 @@ canvas {
                             type="number"
                             id="amount2"
                             class="amount-input"
-                            value="20.00"
-                            min="1"
-                            step="1"
+                            value="10.00"
+                            min="10"
+                            step="5"
                         >
 
                         <button
@@ -5033,7 +5033,7 @@ async function syncState() {
                 "multiplier-overlay crashed-text";
 
             multDisplay.innerText =
-                "FLEW AWAY!\n"
+                "CRASHED!\n"
                 +
                 (
                     data.crash_point
