@@ -316,15 +316,15 @@ def generate_crash_point():
 
 
 def calculate_multiplier(elapsed):
-    multiplier = 2.0 + (elapsed * 2.22)
+    multiplier = 1.0 + (elapsed * 1.22)
 
-    if multiplier > 2.0:
+    if multiplier > 2.5:
         multiplier += (
             ((elapsed - 6.0) ** 1.25) * 0.05
         )
 
     return round(
-        max(multiplier, 2.0),
+        max(multiplier, 1.0),
         2
     )
 
