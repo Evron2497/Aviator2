@@ -316,7 +316,7 @@ def generate_crash_point():
 
 
 def calculate_multiplier(elapsed):
-    multiplier = 2.5 + (elapsed * 0.22)
+    multiplier = 1.0 + (elapsed * 2.22)
 
     if multiplier > 2.5:
         multiplier += (
@@ -324,7 +324,7 @@ def calculate_multiplier(elapsed):
         )
 
     return round(
-        max(multiplier, 2.5),
+        max(multiplier, 1.0),
         2
     )
 
@@ -5033,7 +5033,7 @@ async function syncState() {
                 "multiplier-overlay crashed-text";
 
             multDisplay.innerText =
-                "CRASHED!\n"
+                "CRASHED\n"
                 +
                 (
                     data.crash_point
