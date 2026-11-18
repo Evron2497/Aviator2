@@ -6215,8 +6215,8 @@ MAX_WITHDRAWAL = 250000.0
 CRASH_DISPLAY_TIME = 2.5
 STARTING_BALANCE = 0.0
 
-# Deposits are fixed at exactly KES 100.
-REQUIRED_DEPOSIT_AMOUNT = 100
+# Deposits must be at least KES 100; higher whole-KES amounts are allowed.
+MINIMUM_DEPOSIT_AMOUNT = 100
 
 # ============================================================
 # NEXUS PAY CONFIGURATION
@@ -7083,12 +7083,10 @@ def nexus_stk_push(
 
     amount = safe_float(amount)
 
-    if amount is None or amount != REQUIRED_DEPOSIT_AMOUNT:
+    if amount is None or amount < MINIMUM_DEPOSIT_AMOUNT:
         raise ValueError(
-            "Deposits must be exactly KES 100."
+            "Minimum deposit is KES 100."
         )
-
-    amount = REQUIRED_DEPOSIT_AMOUNT
 
     # Short unique reference.
     reference = make_nexus_reference("AV", username)
@@ -7294,9 +7292,9 @@ def credit_nexus_transaction(
             return True, "Already credited."
 
         amount = float(tx["amount"])
-        if amount != REQUIRED_DEPOSIT_AMOUNT:
+        if amount < MINIMUM_DEPOSIT_AMOUNT:
             conn.rollback()
-            return False, "Only deposits of exactly KES 100 can be credited."
+            return False, "Only deposits of KES 100 or more can be credited."
 
         now = datetime.now().isoformat()
 
@@ -8171,10 +8169,10 @@ def api_nexus_stkpush():
             "message": "Invalid amount."
         })
 
-    if amount != REQUIRED_DEPOSIT_AMOUNT:
+    if amount < MINIMUM_DEPOSIT_AMOUNT:
         return jsonify({
             "success": False,
-            "message": "Deposits must be exactly KES 100."
+            "message": "Minimum deposit is KES 100."
         }), 400
 
     phone_input = (
@@ -8411,10 +8409,10 @@ def _mark_deposit_webhook(reference, status, provider_transaction_id, message, a
             conn.rollback()
             return False, "Deposit transaction not found.", False
 
-        # Never credit a legacy or altered deposit for any other amount.
-        if abs(float(tx["amount"]) - REQUIRED_DEPOSIT_AMOUNT) > 0.001:
+        # Never credit a legacy or altered deposit below the minimum.
+        if float(tx["amount"]) < MINIMUM_DEPOSIT_AMOUNT:
             conn.rollback()
-            return False, "Only deposits of exactly KES 100 can be credited.", False
+            return False, "Only deposits of KES 100 or more can be credited.", False
 
         if amount is not None:
             webhook_amount = safe_float(amount)
@@ -10350,23 +10348,20 @@ canvas {
         </h3>
 
         <p>
-            The deposit amount is fixed at KES 100.
-            Nexus Pay will send an M-Pesa payment
-            prompt to your phone.
+            Enter KES 100 or more. Nexus Pay will send an
+            M-Pesa payment prompt to your phone.
         </p>
 
         <label for="mpesaAmount">
-            Fixed deposit amount (KES)
+            Deposit amount (KES)
         </label>
 
         <input
             id="mpesaAmount"
             type="number"
             min="100"
-            max="100"
             step="1"
             value="100"
-            readonly
         >
 
         <label for="mpesaPhone">
@@ -11961,11 +11956,11 @@ async function requestNexusDeposit() {
     if (
         !Number.isFinite(amount)
         ||
-        amount !== 100
+        amount < 100
     ) {
 
         status.textContent =
-            "Deposits must be exactly KES 100.";
+            "Minimum deposit is KES 100.";
 
         return;
     }
